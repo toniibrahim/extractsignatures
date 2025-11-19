@@ -32,6 +32,7 @@ env/
 # Output folders
 output/
 temp/
+debug/
 *.jpg
 *.jpeg
 *.png
