@@ -113,27 +113,73 @@ class SignatureExtractor:
         self.print_step(step_num, total_steps, f"Converting PDF to image (300 DPI)...")
         start_time = time.time()
 
-        # Convert PDF to images (last page only)
-        images = convert_from_path(
-            pdf_path,
-            dpi=300,  # High quality
-            first_page=-1,  # Last page
-            last_page=-1,
-            fmt='jpeg'
-        )
+        try:
+            # Auto-detect poppler path on Windows if needed
+            poppler_path = None
+            if os.name == 'nt':  # Windows
+                # Common Windows poppler locations
+                possible_paths = [
+                    r"C:\Program Files\poppler\Library\bin",
+                    r"C:\Program Files (x86)\poppler\Library\bin",
+                    r"C:\poppler\Library\bin",
+                    os.path.expanduser(r"~\poppler\Library\bin"),
+                ]
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        poppler_path = path
+                        print(f"      → Found poppler at: {poppler_path}")
+                        break
 
-        if not images:
-            raise ValueError(f"Could not convert PDF: {pdf_path}")
+            # Convert PDF to images (last page only)
+            # Note: -1 for last page doesn't work, need to get page count first
+            print(f"      → Reading PDF and converting last page...")
 
-        # Save the last page as JPEG
-        temp_image_path = self.temp_folder / f"{pdf_path.stem}_temp.jpg"
-        images[0].save(temp_image_path, 'JPEG', quality=95)
+            kwargs = {
+                'pdf_path': pdf_path,
+                'dpi': 300,
+                'fmt': 'jpeg',
+                'last_page': None,  # Will convert all and take last
+            }
 
-        elapsed = time.time() - start_time
-        file_size = temp_image_path.stat().st_size / 1024  # KB
-        print(f"      ✓ Converted to JPEG ({file_size:.1f} KB) in {elapsed:.2f}s")
+            if poppler_path:
+                kwargs['poppler_path'] = poppler_path
 
-        return temp_image_path
+            images = convert_from_path(**kwargs)
+
+            if not images or len(images) == 0:
+                raise ValueError(f"No pages found in PDF: {pdf_path}")
+
+            # Take the last page
+            last_page = images[-1]
+            print(f"      → Extracted page {len(images)} of {len(images)} (last page)")
+
+            # Save the last page as JPEG
+            temp_image_path = self.temp_folder / f"{pdf_path.stem}_temp.jpg"
+            last_page.save(temp_image_path, 'JPEG', quality=95)
+
+            elapsed = time.time() - start_time
+            file_size = temp_image_path.stat().st_size / 1024  # KB
+            print(f"      ✓ Converted to JPEG ({file_size:.1f} KB) in {elapsed:.2f}s")
+
+            return temp_image_path
+
+        except Exception as e:
+            print(f"\n      ✗ PDF conversion failed!")
+            print(f"      Error: {e}")
+
+            if os.name == 'nt':  # Windows
+                print(f"\n      💡 WINDOWS POPPLER INSTALLATION:")
+                print(f"      1. Download from: https://github.com/oschwartz10612/poppler-windows/releases/")
+                print(f"      2. Extract to: C:\\Program Files\\poppler")
+                print(f"      3. Add to PATH: C:\\Program Files\\poppler\\Library\\bin")
+                print(f"      4. Restart your terminal")
+                print(f"\n      Or install via Chocolatey: choco install poppler")
+            else:
+                print(f"\n      💡 LINUX/MAC POPPLER INSTALLATION:")
+                print(f"      Ubuntu/Debian: sudo apt-get install poppler-utils")
+                print(f"      macOS: brew install poppler")
+
+            raise
 
     def encode_image(self, image_path: Path) -> str:
         """
