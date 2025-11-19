@@ -213,7 +213,7 @@ class SignatureExtractor:
         Returns:
             Dictionary with bbox coordinates and employee number
         """
-        self.print_step(step_num, total_steps, "Analyzing image with OpenAI GPT-4o Vision API...")
+        self.print_step(step_num, total_steps, "Analyzing image with OpenAI GPT-4o (latest) Vision API...")
         start_time = time.time()
 
         # Encode image
@@ -222,39 +222,55 @@ class SignatureExtractor:
         encoded_size = len(base64_image) / 1024  # KB
         print(f"      → Sending image to OpenAI ({encoded_size:.1f} KB)...")
 
-        # Create prompt
-        prompt = """This is a signature declaration form. At the BOTTOM of this document, there is a section labeled "Handwritten Signature Specimen:" followed by an actual handwritten signature.
+        # Create enhanced prompt with step-by-step reasoning
+        prompt = """You are analyzing a signature declaration form. I need you to find and extract the handwritten signature.
 
-Your task:
-1. Locate the handwritten signature that appears in the "Handwritten Signature Specimen" section at the bottom of the page
-2. Provide the bounding box coordinates for ONLY the handwritten signature itself (not the label text "Handwritten Signature Specimen")
-3. Extract the Employee Number from the form if visible
+STEP-BY-STEP PROCESS:
+1. Scan the entire document from top to bottom
+2. Locate the section labeled "Handwritten Signature Specimen:" - this will be near the BOTTOM of the page
+3. Look IMMEDIATELY BELOW or NEXT TO this label text
+4. Identify the actual handwritten signature (cursive/handwritten ink marks)
+5. Measure the bounding box that tightly contains ONLY the handwritten signature
 
-IMPORTANT:
-- Look at the BOTTOM portion of the document
-- Find the text "Handwritten Signature Specimen:"
-- The actual handwritten signature is BELOW or NEXT TO this label
-- Return coordinates for the handwritten ink/signature ONLY, not the printed label text
+CRITICAL REQUIREMENTS:
+- The signature is a HANDWRITTEN element (pen/ink marks in cursive or script)
+- It appears AFTER the printed text "Handwritten Signature Specimen:"
+- The signature is typically located in the BOTTOM 20-30% of the page
+- Do NOT include the label text itself
+- Do NOT include the box border or form lines
+- ONLY include the actual handwritten ink marks
 
-Return ONLY a JSON object with this exact structure (no additional text):
+VISUAL CLUES:
+- Look for cursive writing or handwritten marks
+- The signature will be distinctly different from printed text
+- It's usually in the lower portion of the document (y > 0.70)
+- It may span horizontally but is typically compact vertically
+
+Additionally, extract the Employee Number if you see it in the form (usually near the top).
+
+OUTPUT FORMAT - Return ONLY this JSON structure with no other text:
 {
     "signature_bbox": {
-        "ymin": <value between 0 and 1>,
-        "xmin": <value between 0 and 1>,
-        "ymax": <value between 0 and 1>,
-        "xmax": <value between 0 and 1>
+        "ymin": <0-1 value for top of signature>,
+        "xmin": <0-1 value for left of signature>,
+        "ymax": <0-1 value for bottom of signature>,
+        "xmax": <0-1 value for right of signature>
     },
     "employee_number": "<number or null>"
 }
 
-The bounding box coordinates should be normalized (0-1 range) where:
-- ymin, xmin is the top-left corner of the handwritten signature
-- ymax, xmax is the bottom-right corner of the handwritten signature
-- The signature is typically in the bottom 20-30% of the page (ymin > 0.7)"""
+Example of good bounding box for a signature at the bottom:
+- ymin: 0.85 (near bottom)
+- xmin: 0.15 (some margin from left)
+- ymax: 0.95 (bottom area)
+- xmax: 0.70 (extends to the right)
+
+Remember: Return ONLY the JSON, nothing else."""
 
         try:
+            # Use latest GPT-4o model without max_tokens parameter
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o",  # Using latest available model
                 messages=[
                     {
                         "role": "user",
@@ -270,12 +286,12 @@ The bounding box coordinates should be normalized (0-1 range) where:
                         ]
                     }
                 ],
-                max_tokens=500,
-                temperature=0
+                temperature=0  # Removed max_tokens parameter
             )
 
             # Parse response
             response_text = response.choices[0].message.content.strip()
+            print(f"      → Raw API response length: {len(response_text)} chars")
 
             # Remove markdown code blocks if present
             response_text = re.sub(r'```json\s*|\s*```', '', response_text).strip()
