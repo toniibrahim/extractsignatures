@@ -23,10 +23,21 @@ load_dotenv()
 
 # Try to load manual configuration overrides
 try:
-    from config import MANUAL_BBOX_OVERRIDES, DEFAULT_BBOX
+    from config import (
+        MANUAL_BBOX_OVERRIDES,
+        DEFAULT_BBOX,
+        PRESERVE_COLORS,
+        CLEANING_METHOD,
+        OUTPUT_QUALITY,
+        OUTPUT_DPI
+    )
 except ImportError:
     MANUAL_BBOX_OVERRIDES = {}
     DEFAULT_BBOX = None
+    PRESERVE_COLORS = True
+    CLEANING_METHOD = "color"
+    OUTPUT_QUALITY = 95
+    OUTPUT_DPI = 300
 
 class SignatureExtractor:
     """Extract signatures from PDF documents using OpenAI Vision API"""
@@ -502,7 +513,7 @@ EXAMPLE for a signature in the middle-bottom area:
 
     def clean_signature(self, image: np.ndarray, step_num: int = 4, total_steps: int = 5) -> np.ndarray:
         """
-        Clean signature by removing background using adaptive thresholding
+        Clean signature by removing background using configured method
 
         Args:
             image: Input image as numpy array
@@ -512,38 +523,83 @@ EXAMPLE for a signature in the middle-bottom area:
         Returns:
             Cleaned image with white background
         """
-        self.print_step(step_num, total_steps, "Cleaning signature background...")
+        self.print_step(step_num, total_steps, f"Cleaning signature background (method: {CLEANING_METHOD})...")
         start_time = time.time()
 
-        # Convert to grayscale
-        print(f"      → Converting to grayscale...")
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if CLEANING_METHOD == "none":
+            # No cleaning, just return original
+            print(f"      → No cleaning applied (preserving original quality)")
+            elapsed = time.time() - start_time
+            print(f"      ✓ Skipped cleaning in {elapsed:.2f}s")
+            return image
 
-        # Apply adaptive thresholding
-        # This creates a clean binary image where ink is black and background is white
-        print(f"      → Applying adaptive thresholding (blockSize=11, C=2)...")
-        cleaned = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            blockSize=11,  # Size of pixel neighborhood
-            C=2  # Constant subtracted from mean
-        )
+        elif CLEANING_METHOD == "color":
+            # Remove background while preserving ink colors
+            print(f"      → Removing background while preserving ink colors...")
 
-        # Optional: Apply morphological operations to remove noise
-        print(f"      → Applying morphological operations to remove noise...")
-        kernel = np.ones((2, 2), np.uint8)
-        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
-        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+            # Convert to grayscale for analysis
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Convert back to BGR for consistency
-        cleaned_bgr = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
+            # Apply Gaussian blur to reduce noise
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        elapsed = time.time() - start_time
-        print(f"      ✓ Background cleaned in {elapsed:.2f}s")
+            # Use Otsu's thresholding to automatically determine threshold
+            _, mask = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-        return cleaned_bgr
+            # Invert mask (we want ink to be white in mask, background to be black)
+            mask = cv2.bitwise_not(mask)
+
+            # Optional: Apply morphological operations to clean up the mask
+            print(f"      → Refining mask with morphological operations...")
+            kernel = np.ones((2, 2), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+
+            # Create white background
+            white_bg = np.ones_like(image) * 255
+
+            # Convert mask to 3 channels
+            mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+
+            # Blend: keep original colors where mask is white, use white background elsewhere
+            # Normalize mask to 0-1 range
+            mask_norm = mask_3ch.astype(float) / 255.0
+
+            # Apply mask
+            result = (image.astype(float) * mask_norm + white_bg.astype(float) * (1 - mask_norm)).astype(np.uint8)
+
+            elapsed = time.time() - start_time
+            print(f"      ✓ Background removed (colors preserved) in {elapsed:.2f}s")
+            return result
+
+        else:  # "adaptive" - classic black & white method
+            # Convert to grayscale
+            print(f"      → Converting to grayscale...")
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Apply adaptive thresholding
+            print(f"      → Applying adaptive thresholding (blockSize=11, C=2)...")
+            cleaned = cv2.adaptiveThreshold(
+                gray,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
+                blockSize=11,  # Size of pixel neighborhood
+                C=2  # Constant subtracted from mean
+            )
+
+            # Apply morphological operations to remove noise
+            print(f"      → Applying morphological operations to remove noise...")
+            kernel = np.ones((2, 2), np.uint8)
+            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
+            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
+
+            # Convert back to BGR for consistency
+            cleaned_bgr = cv2.cvtColor(cleaned, cv2.COLOR_GRAY2BGR)
+
+            elapsed = time.time() - start_time
+            print(f"      ✓ Background cleaned (B&W) in {elapsed:.2f}s")
+            return cleaned_bgr
 
     def process_pdf(self, pdf_path: Path, file_num: int = 1, total_files: int = 1) -> bool:
         """
@@ -609,10 +665,10 @@ EXAMPLE for a signature in the middle-bottom area:
             self.print_step(5, total_steps, "Saving signature to file...")
             save_start = time.time()
             output_path = self.output_folder / f"{final_employee_number}.jpg"
-            cv2.imwrite(str(output_path), cleaned_signature, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(str(output_path), cleaned_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
             save_elapsed = time.time() - save_start
             output_size = output_path.stat().st_size / 1024  # KB
-            print(f"      ✓ Saved to: {output_path.name} ({output_size:.1f} KB) in {save_elapsed:.2f}s")
+            print(f"      ✓ Saved to: {output_path.name} ({output_size:.1f} KB, quality={OUTPUT_QUALITY}) in {save_elapsed:.2f}s")
 
             # Cleanup temp file
             if temp_image.exists():
