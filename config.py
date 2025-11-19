@@ -16,21 +16,21 @@ Coordinates are normalized (0-1 range):
 MANUAL_BBOX_OVERRIDES = {
     # Example:
     # "3905": {
-    #     "ymin": 0.82,
-    #     "xmin": 0.15,
-    #     "ymax": 0.89,
-    #     "xmax": 0.68
+         "ymin": 0.78,
+         "xmin": 0.25,
+         "ymax": 0.89,
+         "xmax": 0.68
     # },
 }
 
 # Default bbox to use for ALL PDFs (if set, overrides AI detection)
 # Set to None to use AI detection
-DEFAULT_BBOX = None
+# DEFAULT_BBOX = None
 
 # Example - uncomment and adjust these values if AI detection is consistently wrong:
-# DEFAULT_BBOX = {
-#     "ymin": 0.82,
-#     "xmin": 0.15,
-#     "ymax": 0.89,
-#     "xmax": 0.68
-# }
+DEFAULT_BBOX = {
+     "ymin": 0.78,
+     "xmin": 0.25,
+     "ymax": 0.89,
+     "xmax": 0.68
+ }
