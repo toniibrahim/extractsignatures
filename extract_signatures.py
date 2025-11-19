@@ -21,6 +21,13 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Try to load manual configuration overrides
+try:
+    from config import MANUAL_BBOX_OVERRIDES, DEFAULT_BBOX
+except ImportError:
+    MANUAL_BBOX_OVERRIDES = {}
+    DEFAULT_BBOX = None
+
 class SignatureExtractor:
     """Extract signatures from PDF documents using OpenAI Vision API"""
 
@@ -216,6 +223,31 @@ class SignatureExtractor:
         self.print_step(step_num, total_steps, "Analyzing image with OpenAI GPT-4o (latest) Vision API...")
         start_time = time.time()
 
+        # Check for manual bbox override
+        manual_bbox = None
+        if employee_number and employee_number in MANUAL_BBOX_OVERRIDES:
+            manual_bbox = MANUAL_BBOX_OVERRIDES[employee_number]
+            print(f"      ℹ Using manual bbox override for employee {employee_number}")
+        elif DEFAULT_BBOX is not None:
+            manual_bbox = DEFAULT_BBOX
+            print(f"      ℹ Using default manual bbox (from config.py)")
+
+        if manual_bbox:
+            result = {
+                'signature_bbox': manual_bbox,
+                'employee_number': employee_number
+            }
+            elapsed = time.time() - start_time
+            bbox = manual_bbox
+            print(f"      ✓ Manual bounding box: ymin={bbox['ymin']:.3f}, xmin={bbox['xmin']:.3f}, ymax={bbox['ymax']:.3f}, xmax={bbox['xmax']:.3f}")
+            print(f"      ✓ Skipped AI detection (using manual override) in {elapsed:.2f}s")
+
+            # Save debug visualization if enabled
+            if self.debug:
+                self.save_bbox_visualization(image_path, bbox, employee_number)
+
+            return result
+
         # Encode image
         print(f"      → Encoding image to base64...")
         base64_image = self.encode_image(image_path)
@@ -223,49 +255,56 @@ class SignatureExtractor:
         print(f"      → Sending image to OpenAI ({encoded_size:.1f} KB)...")
 
         # Create enhanced prompt with step-by-step reasoning
-        prompt = """You are analyzing a signature declaration form. I need you to find and extract the handwritten signature.
+        prompt = """CRITICAL TASK: Locate the HANDWRITTEN SIGNATURE on this form.
 
-STEP-BY-STEP PROCESS:
-1. Scan the entire document from top to bottom
-2. Locate the section labeled "Handwritten Signature Specimen:" - this will be near the BOTTOM of the page
-3. Look IMMEDIATELY BELOW or NEXT TO this label text
-4. Identify the actual handwritten signature (cursive/handwritten ink marks)
-5. Measure the bounding box that tightly contains ONLY the handwritten signature
+VISUAL IDENTIFICATION STEPS:
+1. Find the text "Handwritten Signature Specimen:" near the bottom of the page (this is PRINTED text)
+2. The HANDWRITTEN SIGNATURE is the cursive/script writing that appears IN THE LARGE BOX BELOW this label
+3. The signature consists of flowing, connected handwritten pen strokes (cursive writing)
+4. It will look distinctly different from the typed/printed text on the form
 
-CRITICAL REQUIREMENTS:
-- The signature is a HANDWRITTEN element (pen/ink marks in cursive or script)
-- It appears AFTER the printed text "Handwritten Signature Specimen:"
-- The signature is typically located in the BOTTOM 20-30% of the page
-- Do NOT include the label text itself
-- Do NOT include the box border or form lines
-- ONLY include the actual handwritten ink marks
+IMPORTANT - WHAT TO LOOK FOR:
+- HANDWRITTEN cursive/script marks (NOT printed text)
+- Located INSIDE a box/field below the "Handwritten Signature Specimen:" label
+- Appears in the BOTTOM THIRD of the page (but NOT at the very bottom edge)
+- Typical Y-coordinates: between 0.75 and 0.92 (NOT 0.95-1.0)
+- If you see a signature, it's usually around y=0.82 to y=0.90
 
-VISUAL CLUES:
-- Look for cursive writing or handwritten marks
-- The signature will be distinctly different from printed text
-- It's usually in the lower portion of the document (y > 0.70)
-- It may span horizontally but is typically compact vertically
+COMMON MISTAKES TO AVOID:
+❌ DO NOT select empty space below the signature
+❌ DO NOT select the bottom edge of the page
+❌ DO NOT select the label text "Handwritten Signature Specimen:"
+❌ DO NOT select printed text
+✅ DO select the actual handwritten cursive marks
 
-Additionally, extract the Employee Number if you see it in the form (usually near the top).
+VALIDATION:
+- The signature bbox should have: ymin between 0.75-0.90 (NOT above 0.90)
+- Width should be reasonable (xmax - xmin should be 0.3 to 0.7)
+- Height should be compact (ymax - ymin should be 0.03 to 0.15)
 
-OUTPUT FORMAT - Return ONLY this JSON structure with no other text:
+Also extract the Employee Number from the top portion of the form.
+
+Return ONLY this JSON (no other text):
 {
     "signature_bbox": {
-        "ymin": <0-1 value for top of signature>,
-        "xmin": <0-1 value for left of signature>,
-        "ymax": <0-1 value for bottom of signature>,
-        "xmax": <0-1 value for right of signature>
+        "ymin": <0.75 to 0.90>,
+        "xmin": <0.1 to 0.4>,
+        "ymax": <0.82 to 0.95>,
+        "xmax": <0.4 to 0.9>
     },
     "employee_number": "<number or null>"
 }
 
-Example of good bounding box for a signature at the bottom:
-- ymin: 0.85 (near bottom)
-- xmin: 0.15 (some margin from left)
-- ymax: 0.95 (bottom area)
-- xmax: 0.70 (extends to the right)
-
-Remember: Return ONLY the JSON, nothing else."""
+EXAMPLE for a signature in the middle-bottom area:
+{
+    "signature_bbox": {
+        "ymin": 0.82,
+        "xmin": 0.15,
+        "ymax": 0.89,
+        "xmax": 0.68
+    },
+    "employee_number": "3905"
+}"""
 
         try:
             # Use latest GPT-4o model without max_tokens parameter
@@ -305,6 +344,32 @@ Remember: Return ONLY the JSON, nothing else."""
             elapsed = time.time() - start_time
             bbox = result['signature_bbox']
             print(f"      ✓ Received bounding box: ymin={bbox['ymin']:.3f}, xmin={bbox['xmin']:.3f}, ymax={bbox['ymax']:.3f}, xmax={bbox['xmax']:.3f}")
+
+            # Validate bounding box
+            warnings = []
+            bbox_height = bbox['ymax'] - bbox['ymin']
+            bbox_width = bbox['xmax'] - bbox['xmin']
+
+            # Check if bbox seems incorrect
+            if bbox['ymin'] > 0.92:
+                warnings.append(f"ymin too low ({bbox['ymin']:.3f} > 0.92) - signature might be missed")
+            if bbox['ymax'] > 0.97:
+                warnings.append(f"ymax too close to bottom ({bbox['ymax']:.3f} > 0.97) - might be detecting empty space")
+            if bbox_height < 0.02:
+                warnings.append(f"height too small ({bbox_height:.3f} < 0.02) - signature might be cut off")
+            if bbox_height > 0.25:
+                warnings.append(f"height too large ({bbox_height:.3f} > 0.25) - might include extra content")
+            if bbox_width < 0.15:
+                warnings.append(f"width too small ({bbox_width:.3f} < 0.15) - signature might be cut off")
+
+            if warnings:
+                print(f"      ⚠ VALIDATION WARNINGS:")
+                for warning in warnings:
+                    print(f"        • {warning}")
+                print(f"      ⚠ The detected bbox may be incorrect. Check debug images!")
+            else:
+                print(f"      ✓ Bounding box validation passed")
+
             if result.get('employee_number'):
                 print(f"      ✓ Detected employee number: {result['employee_number']}")
             print(f"      ✓ API call completed in {elapsed:.2f}s")
