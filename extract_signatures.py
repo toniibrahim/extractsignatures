@@ -24,21 +24,26 @@ load_dotenv()
 class SignatureExtractor:
     """Extract signatures from PDF documents using OpenAI Vision API"""
 
-    def __init__(self, input_folder: str = "./input", output_folder: str = "./output"):
+    def __init__(self, input_folder: str = "./input", output_folder: str = "./output", debug: bool = True):
         """
         Initialize the signature extractor
 
         Args:
             input_folder: Folder containing PDF files
             output_folder: Folder to save extracted signatures
+            debug: Save debug images showing detection process
         """
         self.input_folder = Path(input_folder)
         self.output_folder = Path(output_folder)
         self.temp_folder = Path("./temp")
+        self.debug_folder = Path("./debug")
+        self.debug = debug
 
         # Create output and temp directories
         self.output_folder.mkdir(exist_ok=True)
         self.temp_folder.mkdir(exist_ok=True)
+        if self.debug:
+            self.debug_folder.mkdir(exist_ok=True)
 
         # Initialize OpenAI client
         api_key = os.getenv("OPENAI_API_KEY")
@@ -218,10 +223,18 @@ class SignatureExtractor:
         print(f"      → Sending image to OpenAI ({encoded_size:.1f} KB)...")
 
         # Create prompt
-        prompt = """Please analyze this document and provide the following information in JSON format:
+        prompt = """This is a signature declaration form. At the BOTTOM of this document, there is a section labeled "Handwritten Signature Specimen:" followed by an actual handwritten signature.
 
-1. Find the "Handwritten Signature Specimen" area and provide the bounding box coordinates.
-2. Extract the Employee Number from the document if visible.
+Your task:
+1. Locate the handwritten signature that appears in the "Handwritten Signature Specimen" section at the bottom of the page
+2. Provide the bounding box coordinates for ONLY the handwritten signature itself (not the label text "Handwritten Signature Specimen")
+3. Extract the Employee Number from the form if visible
+
+IMPORTANT:
+- Look at the BOTTOM portion of the document
+- Find the text "Handwritten Signature Specimen:"
+- The actual handwritten signature is BELOW or NEXT TO this label
+- Return coordinates for the handwritten ink/signature ONLY, not the printed label text
 
 Return ONLY a JSON object with this exact structure (no additional text):
 {
@@ -235,9 +248,9 @@ Return ONLY a JSON object with this exact structure (no additional text):
 }
 
 The bounding box coordinates should be normalized (0-1 range) where:
-- ymin, xmin is the top-left corner of the signature area
-- ymax, xmax is the bottom-right corner of the signature area
-- Include only the handwritten signature itself, not the label text"""
+- ymin, xmin is the top-left corner of the handwritten signature
+- ymax, xmax is the bottom-right corner of the handwritten signature
+- The signature is typically in the bottom 20-30% of the page (ymin > 0.7)"""
 
         try:
             response = self.client.chat.completions.create(
@@ -280,11 +293,59 @@ The bounding box coordinates should be normalized (0-1 range) where:
                 print(f"      ✓ Detected employee number: {result['employee_number']}")
             print(f"      ✓ API call completed in {elapsed:.2f}s")
 
+            # Save debug visualization if enabled
+            if self.debug:
+                self.save_bbox_visualization(image_path, bbox, employee_number)
+
             return result
 
         except Exception as e:
             print(f"      ✗ Error calling OpenAI API: {e}")
             raise
+
+    def save_bbox_visualization(self, image_path: Path, bbox: dict, emp_num: Optional[str] = None):
+        """
+        Save a debug image showing the detected bounding box
+
+        Args:
+            image_path: Path to the original image
+            bbox: Bounding box dictionary
+            emp_num: Employee number for filename
+        """
+        try:
+            img = cv2.imread(str(image_path))
+            if img is None:
+                return
+
+            height, width = img.shape[:2]
+
+            # Convert normalized coordinates to pixels
+            ymin = int(bbox['ymin'] * height)
+            xmin = int(bbox['xmin'] * width)
+            ymax = int(bbox['ymax'] * height)
+            xmax = int(bbox['xmax'] * width)
+
+            # Draw rectangle
+            cv2.rectangle(img, (xmin, ymin), (xmax, ymax), (0, 255, 0), 3)
+
+            # Add text label
+            label = f"Signature Detection"
+            cv2.putText(img, label, (xmin, ymin - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            # Add coordinates text
+            coords_text = f"({xmin}, {ymin}) to ({xmax}, {ymax})"
+            cv2.putText(img, coords_text, (xmin, ymax + 25),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+            # Save debug image
+            filename = f"debug_{emp_num or 'unknown'}_bbox.jpg"
+            debug_path = self.debug_folder / filename
+            cv2.imwrite(str(debug_path), img)
+            print(f"      💾 Debug visualization saved: {debug_path.name}")
+
+        except Exception as e:
+            print(f"      ⚠ Could not save debug visualization: {e}")
 
     def crop_signature(self, image_path: Path, bbox: dict, step_num: int = 3, total_steps: int = 5) -> np.ndarray:
         """
@@ -337,6 +398,26 @@ The bounding box coordinates should be normalized (0-1 range) where:
         print(f"      ✓ Signature cropped in {elapsed:.2f}s")
 
         return cropped
+
+    def save_debug_image(self, image: np.ndarray, stage: str, emp_num: Optional[str] = None):
+        """
+        Save debug image for a processing stage
+
+        Args:
+            image: Image to save
+            stage: Processing stage name
+            emp_num: Employee number for filename
+        """
+        if not self.debug:
+            return
+
+        try:
+            filename = f"debug_{emp_num or 'unknown'}_{stage}.jpg"
+            debug_path = self.debug_folder / filename
+            cv2.imwrite(str(debug_path), image)
+            print(f"      💾 Debug image saved: {debug_path.name}")
+        except Exception as e:
+            print(f"      ⚠ Could not save debug image: {e}")
 
     def clean_signature(self, image: np.ndarray, step_num: int = 4, total_steps: int = 5) -> np.ndarray:
         """
@@ -432,8 +513,16 @@ The bounding box coordinates should be normalized (0-1 range) where:
             # Step 3: Crop signature
             cropped_signature = self.crop_signature(temp_image, bbox, step_num=3, total_steps=total_steps)
 
+            # Save debug image of cropped signature before cleaning
+            if self.debug:
+                self.save_debug_image(cropped_signature, "2_cropped", final_employee_number)
+
             # Step 4: Clean signature
             cleaned_signature = self.clean_signature(cropped_signature, step_num=4, total_steps=total_steps)
+
+            # Save debug image of cleaned signature
+            if self.debug:
+                self.save_debug_image(cleaned_signature, "3_cleaned", final_employee_number)
 
             # Step 5: Save final signature
             self.print_step(5, total_steps, "Saving signature to file...")
@@ -451,6 +540,8 @@ The bounding box coordinates should be normalized (0-1 range) where:
             total_elapsed = time.time() - overall_start_time
             print(f"\n{'─'*70}")
             print(f"✓ SUCCESS: Processed {pdf_path.name} in {total_elapsed:.2f}s")
+            if self.debug:
+                print(f"  📁 Debug images saved in: {self.debug_folder.absolute()}")
             print(f"{'─'*70}")
 
             return True
