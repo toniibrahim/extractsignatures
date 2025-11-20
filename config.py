@@ -15,9 +15,9 @@ Coordinates are normalized (0-1 range):
 # Manual overrides for specific employee numbers
 MANUAL_BBOX_OVERRIDES = {
      "ymin": 0.78,
-     "xmin": 0.35,
+     "xmin": 0.25,
      "ymax": 0.90,
-     "xmax": 0.58
+     "xmax": 0.68
  }
 
 
@@ -80,8 +80,8 @@ SIGNATURE_PADDING = 0.05  # 5% padding
 BOTTOM_MARGIN = 0.0  # 2% space below signature
 DEFAULT_BBOX = {
      "ymin": 0.78,
-     "xmin": 0.35,
+     "xmin": 0.25,
      "ymax": 0.90,
-     "xmax": 0.58
+     "xmax": 0.68
  }
 
