@@ -77,7 +77,7 @@ SIGNATURE_PADDING = 0.05  # 5% padding
 # e.g., 0.02 = 2% space below signature (very close to bottom)
 # e.g., 0.05 = 5% space below signature (default)
 # e.g., 0.10 = 10% space below signature (more space at bottom)
-BOTTOM_MARGIN = 0.02  # 2% space below signature
+BOTTOM_MARGIN = 0.0  # 2% space below signature
 DEFAULT_BBOX = {
      "ymin": 0.78,
      "xmin": 0.35,
