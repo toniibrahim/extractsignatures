@@ -30,6 +30,8 @@ try:
         CLEANING_METHOD,
         OUTPUT_QUALITY,
         OUTPUT_DPI,
+        OUTPUT_FORMAT,
+        TRANSPARENT_BACKGROUND,
         MAKE_SQUARE,
         OUTPUT_SIZE,
         SIGNATURE_POSITION,
@@ -41,8 +43,10 @@ except ImportError:
     DEFAULT_BBOX = None
     PRESERVE_COLORS = True
     CLEANING_METHOD = "color"
-    OUTPUT_QUALITY = 95
+    OUTPUT_QUALITY = 100
     OUTPUT_DPI = 300
+    OUTPUT_FORMAT = "png"
+    TRANSPARENT_BACKGROUND = True
     MAKE_SQUARE = True
     OUTPUT_SIZE = 800
     SIGNATURE_POSITION = "bottom"
@@ -545,7 +549,10 @@ EXAMPLE for a signature in the middle-bottom area:
 
         elif CLEANING_METHOD == "color":
             # Remove background while preserving ink colors
-            print(f"      → Removing background while preserving ink colors...")
+            if TRANSPARENT_BACKGROUND:
+                print(f"      → Removing background and creating transparency...")
+            else:
+                print(f"      → Removing background while preserving ink colors...")
 
             # Convert to grayscale for analysis
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -565,22 +572,36 @@ EXAMPLE for a signature in the middle-bottom area:
             mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
             mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-            # Create white background
-            white_bg = np.ones_like(image) * 255
+            if TRANSPARENT_BACKGROUND:
+                # Create RGBA image with transparency
+                print(f"      → Creating transparent background...")
 
-            # Convert mask to 3 channels
-            mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+                # Convert BGR to BGRA (add alpha channel)
+                bgra = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
 
-            # Blend: keep original colors where mask is white, use white background elsewhere
-            # Normalize mask to 0-1 range
-            mask_norm = mask_3ch.astype(float) / 255.0
+                # Use the mask as the alpha channel
+                bgra[:, :, 3] = mask
 
-            # Apply mask
-            result = (image.astype(float) * mask_norm + white_bg.astype(float) * (1 - mask_norm)).astype(np.uint8)
+                elapsed = time.time() - start_time
+                print(f"      ✓ Transparent background created in {elapsed:.2f}s")
+                return bgra
+            else:
+                # Create white background
+                white_bg = np.ones_like(image) * 255
 
-            elapsed = time.time() - start_time
-            print(f"      ✓ Background removed (colors preserved) in {elapsed:.2f}s")
-            return result
+                # Convert mask to 3 channels
+                mask_3ch = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+
+                # Blend: keep original colors where mask is white, use white background elsewhere
+                # Normalize mask to 0-1 range
+                mask_norm = mask_3ch.astype(float) / 255.0
+
+                # Apply mask
+                result = (image.astype(float) * mask_norm + white_bg.astype(float) * (1 - mask_norm)).astype(np.uint8)
+
+                elapsed = time.time() - start_time
+                print(f"      ✓ Background removed (colors preserved) in {elapsed:.2f}s")
+                return result
 
         else:  # "adaptive" - classic black & white method
             # Convert to grayscale
@@ -666,8 +687,15 @@ EXAMPLE for a signature in the middle-bottom area:
             new_width = img_width
             new_height = img_height
 
-        # Create white canvas
-        canvas = np.ones((canvas_size, canvas_size, 3), dtype=np.uint8) * 255
+        # Create canvas (transparent or white)
+        if TRANSPARENT_BACKGROUND and image.shape[2] == 4:  # RGBA image
+            # Create transparent canvas
+            canvas = np.zeros((canvas_size, canvas_size, 4), dtype=np.uint8)
+            print(f"      → Using transparent canvas")
+        else:
+            # Create white canvas
+            canvas = np.ones((canvas_size, canvas_size, 3), dtype=np.uint8) * 255
+            print(f"      → Using white canvas")
 
         # Calculate position based on configuration
         x_offset = (canvas_size - new_width) // 2  # Center horizontally
@@ -774,14 +802,26 @@ EXAMPLE for a signature in the middle-bottom area:
             save_step = 6 if MAKE_SQUARE else 5
             self.print_step(save_step, total_steps, "Saving signature to file...")
             save_start = time.time()
-            output_path = self.output_folder / f"{final_employee_number}.jpg"
-            cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
+
+            # Determine output format and extension
+            if OUTPUT_FORMAT == "png":
+                output_path = self.output_folder / f"{final_employee_number}.png"
+                # PNG compression level: 0 (no compression) to 9 (max compression)
+                # For highest quality, use 0 or 1
+                compression = 9 - min(9, int(OUTPUT_QUALITY / 11))  # Convert 0-100 to 9-0
+                cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_PNG_COMPRESSION, compression])
+            else:  # jpg
+                output_path = self.output_folder / f"{final_employee_number}.jpg"
+                cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
+
             save_elapsed = time.time() - save_start
             output_size = output_path.stat().st_size / 1024  # KB
 
             # Get final dimensions
             final_height, final_width = final_signature.shape[:2]
-            print(f"      ✓ Saved to: {output_path.name} ({final_width}x{final_height}, {output_size:.1f} KB, quality={OUTPUT_QUALITY}) in {save_elapsed:.2f}s")
+            channels = final_signature.shape[2] if len(final_signature.shape) > 2 else 1
+            alpha_info = " with transparency" if channels == 4 else ""
+            print(f"      ✓ Saved to: {output_path.name} ({final_width}x{final_height}{alpha_info}, {output_size:.1f} KB) in {save_elapsed:.2f}s")
 
             # Cleanup temp file
             if temp_image.exists():

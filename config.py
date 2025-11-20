@@ -48,8 +48,12 @@ PRESERVE_COLORS = True
 CLEANING_METHOD = "color"
 
 # Quality settings
-OUTPUT_QUALITY = 95  # JPEG quality (1-100, higher is better)
-OUTPUT_DPI = 300     # DPI for output images
+OUTPUT_QUALITY = 100  # PNG compression (0-9, 0=no compression, 9=max compression)
+OUTPUT_DPI = 300      # DPI for output images
+OUTPUT_FORMAT = "png" # "png" for transparency, "jpg" for smaller files
+
+# Background settings
+TRANSPARENT_BACKGROUND = True  # True for transparent, False for white background
 
 # ============================================================================
 # OUTPUT LAYOUT OPTIONS
