@@ -29,6 +29,7 @@ try:
         PRESERVE_COLORS,
         CLEANING_METHOD,
         OUTPUT_QUALITY,
+        PNG_COMPRESSION_LEVEL,
         OUTPUT_DPI,
         OUTPUT_FORMAT,
         TRANSPARENT_BACKGROUND,
@@ -44,6 +45,7 @@ except ImportError:
     PRESERVE_COLORS = True
     CLEANING_METHOD = "color"
     OUTPUT_QUALITY = 100
+    PNG_COMPRESSION_LEVEL = 9
     OUTPUT_DPI = 300
     OUTPUT_FORMAT = "png"
     TRANSPARENT_BACKGROUND = True
@@ -836,9 +838,8 @@ EXAMPLE for a signature in the middle-bottom area:
             if OUTPUT_FORMAT == "png":
                 output_path = self.output_folder / f"{final_employee_number}.png"
                 # PNG compression level: 0 (no compression) to 9 (max compression)
-                # For highest quality, use 0 or 1
-                compression = 9 - min(9, int(OUTPUT_QUALITY / 11))  # Convert 0-100 to 9-0
-                cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_PNG_COMPRESSION, compression])
+                # Higher compression = smaller file size, but still lossless
+                cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_PNG_COMPRESSION, PNG_COMPRESSION_LEVEL])
             else:  # jpg
                 output_path = self.output_folder / f"{final_employee_number}.jpg"
                 cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
