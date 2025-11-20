@@ -14,18 +14,16 @@ Coordinates are normalized (0-1 range):
 
 # Manual overrides for specific employee numbers
 MANUAL_BBOX_OVERRIDES = {
-    # Example:
-    # "3905": {
-    #     "ymin": 0.82,
-    #     "xmin": 0.15,
-    #     "ymax": 0.89,
-    #     "xmax": 0.68
-    # },
-}
+     "ymin": 0.78,
+     "xmin": 0.35,
+     "ymax": 0.90,
+     "xmax": 0.58
+ }
+
 
 # Default bbox to use for ALL PDFs (if set, overrides AI detection)
 # Set to None to use AI detection
-DEFAULT_BBOX = None
+# DEFAULT_BBOX = None
 
 # Example - uncomment and adjust these values if AI detection is consistently wrong:
 # DEFAULT_BBOX = {
@@ -62,7 +60,7 @@ MAKE_SQUARE = True
 
 # Output size in pixels (width and height if square)
 # If None, uses the cropped signature size
-OUTPUT_SIZE = 800  # pixels (e.g., 800x800 for square)
+OUTPUT_SIZE = 600  # pixels (e.g., 800x800 for square)
 
 # Signature position in square canvas
 # "bottom" - Place signature at bottom (recommended)
@@ -80,3 +78,10 @@ SIGNATURE_PADDING = 0.05  # 5% padding
 # e.g., 0.05 = 5% space below signature (default)
 # e.g., 0.10 = 10% space below signature (more space at bottom)
 BOTTOM_MARGIN = 0.02  # 2% space below signature
+DEFAULT_BBOX = {
+     "ymin": 0.78,
+     "xmin": 0.35,
+     "ymax": 0.90,
+     "xmax": 0.58
+ }
+
