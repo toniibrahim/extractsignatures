@@ -14,14 +14,12 @@ Coordinates are normalized (0-1 range):
 
 # Manual overrides for specific employee numbers
 MANUAL_BBOX_OVERRIDES = {
-    # Example:
-    # "3905": {
-         "ymin": 0.78,
-         "xmin": 0.25,
-         "ymax": 0.89,
-         "xmax": 0.68
-    # },
-}
+     "ymin": 0.78,
+     "xmin": 0.35,
+     "ymax": 0.90,
+     "xmax": 0.58
+ }
+
 
 # Default bbox to use for ALL PDFs (if set, overrides AI detection)
 # Set to None to use AI detection
@@ -75,7 +73,8 @@ SIGNATURE_POSITION = "bottom"
 SIGNATURE_PADDING = 0.05  # 5% padding
 DEFAULT_BBOX = {
      "ymin": 0.78,
-     "xmin": 0.25,
-     "ymax": 0.89,
-     "xmax": 0.68
+     "xmin": 0.35,
+     "ymax": 0.90,
+     "xmax": 0.58
  }
+
