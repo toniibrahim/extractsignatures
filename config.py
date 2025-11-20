@@ -52,6 +52,27 @@ CLEANING_METHOD = "color"
 # Quality settings
 OUTPUT_QUALITY = 95  # JPEG quality (1-100, higher is better)
 OUTPUT_DPI = 300     # DPI for output images
+
+# ============================================================================
+# OUTPUT LAYOUT OPTIONS
+# ============================================================================
+
+# Make output image square (1:1 aspect ratio)
+MAKE_SQUARE = True
+
+# Output size in pixels (width and height if square)
+# If None, uses the cropped signature size
+OUTPUT_SIZE = 800  # pixels (e.g., 800x800 for square)
+
+# Signature position in square canvas
+# "bottom" - Place signature at bottom (recommended)
+# "center" - Place signature in center
+# "top" - Place signature at top
+SIGNATURE_POSITION = "bottom"
+
+# Padding around signature (as fraction of canvas size)
+# e.g., 0.1 means 10% padding on each side
+SIGNATURE_PADDING = 0.05  # 5% padding
 DEFAULT_BBOX = {
      "ymin": 0.78,
      "xmin": 0.25,
