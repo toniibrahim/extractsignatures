@@ -33,7 +33,8 @@ try:
         MAKE_SQUARE,
         OUTPUT_SIZE,
         SIGNATURE_POSITION,
-        SIGNATURE_PADDING
+        SIGNATURE_PADDING,
+        BOTTOM_MARGIN
     )
 except ImportError:
     MANUAL_BBOX_OVERRIDES = {}
@@ -46,6 +47,7 @@ except ImportError:
     OUTPUT_SIZE = 800
     SIGNATURE_POSITION = "bottom"
     SIGNATURE_PADDING = 0.05
+    BOTTOM_MARGIN = 0.02
 
 class SignatureExtractor:
     """Extract signatures from PDF documents using OpenAI Vision API"""
@@ -671,9 +673,10 @@ EXAMPLE for a signature in the middle-bottom area:
         x_offset = (canvas_size - new_width) // 2  # Center horizontally
 
         if SIGNATURE_POSITION == "bottom":
-            # Place at bottom with padding
-            y_offset = canvas_size - new_height - padding
-            print(f"      → Positioning signature at bottom")
+            # Place at bottom with custom bottom margin
+            bottom_space = int(canvas_size * BOTTOM_MARGIN)
+            y_offset = canvas_size - new_height - bottom_space
+            print(f"      → Positioning signature at bottom (bottom margin: {bottom_space}px / {BOTTOM_MARGIN*100:.1f}%)")
         elif SIGNATURE_POSITION == "top":
             # Place at top with padding
             y_offset = padding

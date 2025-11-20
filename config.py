@@ -71,6 +71,13 @@ SIGNATURE_POSITION = "bottom"
 # Padding around signature (as fraction of canvas size)
 # e.g., 0.1 means 10% padding on each side
 SIGNATURE_PADDING = 0.05  # 5% padding
+
+# Bottom margin (space below signature when SIGNATURE_POSITION = "bottom")
+# Set to a smaller value to move signature closer to bottom edge
+# e.g., 0.02 = 2% space below signature (very close to bottom)
+# e.g., 0.05 = 5% space below signature (default)
+# e.g., 0.10 = 10% space below signature (more space at bottom)
+BOTTOM_MARGIN = 0.02  # 2% space below signature
 DEFAULT_BBOX = {
      "ymin": 0.78,
      "xmin": 0.35,
