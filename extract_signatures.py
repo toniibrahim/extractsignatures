@@ -29,7 +29,11 @@ try:
         PRESERVE_COLORS,
         CLEANING_METHOD,
         OUTPUT_QUALITY,
-        OUTPUT_DPI
+        OUTPUT_DPI,
+        MAKE_SQUARE,
+        OUTPUT_SIZE,
+        SIGNATURE_POSITION,
+        SIGNATURE_PADDING
     )
 except ImportError:
     MANUAL_BBOX_OVERRIDES = {}
@@ -38,6 +42,10 @@ except ImportError:
     CLEANING_METHOD = "color"
     OUTPUT_QUALITY = 95
     OUTPUT_DPI = 300
+    MAKE_SQUARE = True
+    OUTPUT_SIZE = 800
+    SIGNATURE_POSITION = "bottom"
+    SIGNATURE_PADDING = 0.05
 
 class SignatureExtractor:
     """Extract signatures from PDF documents using OpenAI Vision API"""
@@ -601,6 +609,94 @@ EXAMPLE for a signature in the middle-bottom area:
             print(f"      ✓ Background cleaned (B&W) in {elapsed:.2f}s")
             return cleaned_bgr
 
+    def create_square_layout(self, image: np.ndarray, step_num: int = 4, total_steps: int = 5) -> np.ndarray:
+        """
+        Create a square canvas and position the signature according to configuration
+
+        Args:
+            image: Input signature image
+            step_num: Current step number
+            total_steps: Total number of steps
+
+        Returns:
+            Square image with signature positioned as configured
+        """
+        if not MAKE_SQUARE:
+            return image
+
+        self.print_step(step_num, total_steps, f"Creating square layout ({OUTPUT_SIZE}x{OUTPUT_SIZE}, position: {SIGNATURE_POSITION})...")
+        start_time = time.time()
+
+        img_height, img_width = image.shape[:2]
+        print(f"      → Original signature size: {img_width}x{img_height}")
+
+        # Determine canvas size
+        if OUTPUT_SIZE:
+            canvas_size = OUTPUT_SIZE
+        else:
+            # Use the larger dimension as canvas size
+            canvas_size = max(img_width, img_height)
+
+        # Calculate padding in pixels
+        padding = int(canvas_size * SIGNATURE_PADDING)
+        available_width = canvas_size - (2 * padding)
+        available_height = canvas_size - (2 * padding)
+
+        print(f"      → Canvas size: {canvas_size}x{canvas_size}")
+        print(f"      → Padding: {padding}px, Available area: {available_width}x{available_height}")
+
+        # Scale signature to fit within available area while maintaining aspect ratio
+        scale = min(available_width / img_width, available_height / img_height)
+
+        # Don't upscale if signature is smaller
+        if scale > 1:
+            scale = 1
+
+        new_width = int(img_width * scale)
+        new_height = int(img_height * scale)
+
+        if scale != 1:
+            print(f"      → Scaling signature to: {new_width}x{new_height} (scale: {scale:.2f})")
+            resized = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+        else:
+            print(f"      → Using original size (no scaling needed)")
+            resized = image
+            new_width = img_width
+            new_height = img_height
+
+        # Create white canvas
+        canvas = np.ones((canvas_size, canvas_size, 3), dtype=np.uint8) * 255
+
+        # Calculate position based on configuration
+        x_offset = (canvas_size - new_width) // 2  # Center horizontally
+
+        if SIGNATURE_POSITION == "bottom":
+            # Place at bottom with padding
+            y_offset = canvas_size - new_height - padding
+            print(f"      → Positioning signature at bottom")
+        elif SIGNATURE_POSITION == "top":
+            # Place at top with padding
+            y_offset = padding
+            print(f"      → Positioning signature at top")
+        else:  # center
+            # Center vertically
+            y_offset = (canvas_size - new_height) // 2
+            print(f"      → Centering signature")
+
+        # Ensure offsets are within bounds
+        y_offset = max(0, min(y_offset, canvas_size - new_height))
+        x_offset = max(0, min(x_offset, canvas_size - new_width))
+
+        print(f"      → Placing at position: ({x_offset}, {y_offset})")
+
+        # Place signature on canvas
+        canvas[y_offset:y_offset + new_height, x_offset:x_offset + new_width] = resized
+
+        elapsed = time.time() - start_time
+        print(f"      ✓ Square layout created in {elapsed:.2f}s")
+
+        return canvas
+
     def process_pdf(self, pdf_path: Path, file_num: int = 1, total_files: int = 1) -> bool:
         """
         Process a single PDF file to extract signature
@@ -619,7 +715,7 @@ EXAMPLE for a signature in the middle-bottom area:
             print(f"{'='*70}")
 
             overall_start_time = time.time()
-            total_steps = 5
+            total_steps = 6 if MAKE_SQUARE else 5
 
             # Step 0: Extract employee number from filename
             print(f"\n  {datetime.now().strftime('%H:%M:%S')} [0/{total_steps}] Extracting employee number from filename...")
@@ -661,14 +757,28 @@ EXAMPLE for a signature in the middle-bottom area:
             if self.debug:
                 self.save_debug_image(cleaned_signature, "3_cleaned", final_employee_number)
 
-            # Step 5: Save final signature
-            self.print_step(5, total_steps, "Saving signature to file...")
+            # Step 5: Create square layout (if enabled)
+            if MAKE_SQUARE:
+                final_signature = self.create_square_layout(cleaned_signature, step_num=5, total_steps=total_steps)
+
+                # Save debug image of square layout
+                if self.debug:
+                    self.save_debug_image(final_signature, "4_square", final_employee_number)
+            else:
+                final_signature = cleaned_signature
+
+            # Step 6 (or 5 if no square): Save final signature
+            save_step = 6 if MAKE_SQUARE else 5
+            self.print_step(save_step, total_steps, "Saving signature to file...")
             save_start = time.time()
             output_path = self.output_folder / f"{final_employee_number}.jpg"
-            cv2.imwrite(str(output_path), cleaned_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
+            cv2.imwrite(str(output_path), final_signature, [cv2.IMWRITE_JPEG_QUALITY, OUTPUT_QUALITY])
             save_elapsed = time.time() - save_start
             output_size = output_path.stat().st_size / 1024  # KB
-            print(f"      ✓ Saved to: {output_path.name} ({output_size:.1f} KB, quality={OUTPUT_QUALITY}) in {save_elapsed:.2f}s")
+
+            # Get final dimensions
+            final_height, final_width = final_signature.shape[:2]
+            print(f"      ✓ Saved to: {output_path.name} ({final_width}x{final_height}, {output_size:.1f} KB, quality={OUTPUT_QUALITY}) in {save_elapsed:.2f}s")
 
             # Cleanup temp file
             if temp_image.exists():
