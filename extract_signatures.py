@@ -579,11 +579,40 @@ EXAMPLE for a signature in the middle-bottom area:
                 # Convert BGR to BGRA (add alpha channel)
                 bgra = cv2.cvtColor(image, cv2.COLOR_BGR2BGRA)
 
-                # Use the mask as the alpha channel
+                # Method 1: Use mask for initial transparency
                 bgra[:, :, 3] = mask
 
+                # Method 2: Make ALL white/light pixels transparent
+                # Convert to HSV to better detect white/light colors
+                print(f"      → Making all white/light pixels transparent...")
+
+                # Calculate brightness/lightness for each pixel
+                # Using the maximum of R, G, B channels
+                brightness = np.max(image, axis=2)
+
+                # Pixels with brightness above threshold become more transparent
+                # Threshold: 200 means pixels with any channel > 200 become transparent
+                white_threshold = 200
+                transparency_mask = brightness > white_threshold
+
+                # Set alpha to 0 (fully transparent) for white pixels
+                bgra[transparency_mask, 3] = 0
+
+                # For gray/light pixels (180-200), make them partially transparent
+                gray_threshold_low = 180
+                gray_threshold_high = 200
+                gray_mask = (brightness > gray_threshold_low) & (brightness <= gray_threshold_high)
+
+                # Gradually reduce opacity for gray pixels
+                for i in range(brightness.shape[0]):
+                    for j in range(brightness.shape[1]):
+                        if gray_mask[i, j]:
+                            # Calculate transparency based on brightness
+                            alpha_value = int((gray_threshold_high - brightness[i, j]) / (gray_threshold_high - gray_threshold_low) * 255)
+                            bgra[i, j, 3] = min(bgra[i, j, 3], alpha_value)
+
                 elapsed = time.time() - start_time
-                print(f"      ✓ Transparent background created in {elapsed:.2f}s")
+                print(f"      ✓ Transparent background created (all white pixels removed) in {elapsed:.2f}s")
                 return bgra
             else:
                 # Create white background
