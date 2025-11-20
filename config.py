@@ -60,7 +60,7 @@ MAKE_SQUARE = True
 
 # Output size in pixels (width and height if square)
 # If None, uses the cropped signature size
-OUTPUT_SIZE = 800  # pixels (e.g., 800x800 for square)
+OUTPUT_SIZE = 600  # pixels (e.g., 800x800 for square)
 
 # Signature position in square canvas
 # "bottom" - Place signature at bottom (recommended)
